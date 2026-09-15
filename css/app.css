@@ -1,0 +1,210 @@
+/* The page is a column: navbar, whatever is above the board, then the board
+ * itself taking the rest. That way the sign in card shortens the quadrants
+ * instead of pushing the bottom row off screen.
+ */
+html { height: 100%; }
+body { min-height: 100%; display: flex; flex-direction: column; }
+main { flex: 1 1 auto; display: flex; flex-direction: column; min-height: 0; }
+.board-wrap { display: flex; flex-direction: column; min-height: 0; }
+.board { display: grid; gap: 1rem; grid-template-columns: 1fr; }
+
+@media (min-width: 992px) {
+  /* The height has to be definite the whole way down. Without it the 1fr rows
+   * fall back to sizing by content, so a full unsorted stretches its row, the
+   * other row matches it, and the board runs off the screen.
+   */
+  body { height: 100vh; overflow: hidden; }
+  .board-wrap { flex: 1 1 auto; }
+  .board { flex: 1 1 auto; min-height: 0;
+           grid-template-columns: 1fr 1fr; grid-template-rows: 1fr 1fr; }
+  /* Grid items default to a content sized minimum; this is what lets a quadrant
+   * shrink and hand the overflow to its own scrollbar.
+   */
+  .quadrant { min-height: 0; }
+}
+@media (max-width: 991.98px) {
+  .quadrant .list-group { max-height: 60vh; }
+}
+
+/* The wordmark sets the header's height, and TEXT_RATIO in
+   art/make-icons.py sets how much of it the lettering takes. One number to
+   change here; at 3.5rem the tagline lands around 10px, which still reads. */
+/* GitHub's own dark tokens, read off the CSS it serves. Bootstrap's dark
+   theme gives #dee2e6 text, and btn-outline-secondary hardcodes #6c757d for
+   its label and border whatever the theme, which on this ground reads as
+   disabled rather than as a control. */
+.navbar[data-bs-theme="dark"] {
+  --bs-body-color: #f0f6fc;
+  --bs-emphasis-color: #f0f6fc;
+  --bs-secondary-color: #9198a1;
+  --bs-border-color: #3d444d;
+}
+
+.navbar .btn-outline-secondary,
+.navbar .btn-outline-danger {
+  --bs-btn-color: #f0f6fc;
+  --bs-btn-border-color: #3d444d;
+  --bs-btn-hover-color: #f0f6fc;
+  --bs-btn-hover-bg: #262c36;
+  --bs-btn-hover-border-color: #3d444d;
+  --bs-btn-active-color: #f0f6fc;
+  --bs-btn-active-bg: #212830;
+  --bs-btn-active-border-color: #3d444d;
+}
+
+/* Sign out keeps the red, but only once you are on it. */
+.navbar .btn-outline-danger {
+  --bs-btn-hover-bg: var(--bs-danger);
+  --bs-btn-hover-border-color: var(--bs-danger);
+}
+
+/* A field has to sit above the bar to read as one, the way GitHub's do. */
+#toolbar .form-control,
+#toolbar .form-select { background-color: var(--bs-tertiary-bg); }
+
+/* width: auto is load bearing. The width and height attributes on the tag
+   are presentational hints, so without it the attribute's 497px stands while
+   max-height squashes the height, and the logo renders stretched. */
+.brand-logo { width: auto; height: auto;
+              max-height: var(--brand-height, 3.5rem);
+              max-width: 100%; display: block; }
+
+/* The outer cells grow from nothing and equally, so the controls between
+   them sit on the page's centre line whatever the logo and the account
+   measure. Neither cell may be given min-width: 0: their automatic minimum
+   is what stops them shrinking under their own contents and overlapping.
+   The toolbar does not grow, so it stays centred rather than taking the
+   slack, and shrinks to its floors before the row wraps. */
+.nav-side { flex: 1 1 0; display: flex; align-items: center; }
+#toolbar { flex: 0 1 auto; flex-wrap: wrap; }
+
+/* Wide enough for one row: narrow the controls to a floor rather than drop
+   the last of them underneath. */
+@media (min-width: 992px) {
+  #toolbar { flex-wrap: nowrap; }
+  #repo-button { min-width: 8rem; }
+  #filter { min-width: 7rem; }
+  #state { min-width: 5.5rem; }
+  #sort { min-width: 8.5rem; }
+}
+
+/* Past this the row needs the space more than the name does. */
+@media (max-width: 1200px) {
+  .brand-logo { max-height: 2.75rem; }
+  #login { display: none; }
+}
+
+/* Nothing fits beside them any more, so the controls take a row of their
+   own. The container is left to wrap only here: above this a wrapping
+   container would move the whole toolbar down before ever shrinking it,
+   because flex chooses lines from content widths and flexes afterwards. */
+@media (max-width: 991.98px) {
+  .navbar > .container-fluid { flex-wrap: wrap; }
+  #toolbar { flex: 1 1 100%; }
+}
+
+.quadrant { border-top: 3px solid var(--q); min-width: 0; }
+.q-now       { --q: var(--bs-danger); }
+.q-ongoing { --q: var(--bs-primary); }
+.q-respond { --q: var(--bs-warning); }
+.q-unsorted  { --q: var(--bs-secondary); }
+
+/* The list takes the slack so the footer sits on the bottom edge of the card.
+ * min-height:0 is what lets it scroll inside a flex column.
+ */
+.quadrant .list-group { flex: 1 1 auto; min-height: 0; overflow-y: auto; }
+
+/* Overlay scrollbars hide until you already know to scroll, which is backwards
+ * here: the quadrant is a fixed box and the bar is the only sign there is more.
+ * Styling ::-webkit-scrollbar is also what opts a WebKit browser out of overlay
+ * mode, so the bar stays on screen.
+ */
+.quadrant .list-group { scrollbar-gutter: stable; scrollbar-width: thin;
+                        scrollbar-color: var(--bs-tertiary-color) transparent; }
+.quadrant .list-group::-webkit-scrollbar { width: 11px; }
+.quadrant .list-group::-webkit-scrollbar-track { background: transparent; }
+.quadrant .list-group::-webkit-scrollbar-thumb {
+  background: var(--bs-tertiary-color);
+  border: 3px solid transparent;
+  background-clip: padding-box;
+  border-radius: 6px;
+}
+.quadrant .list-group::-webkit-scrollbar-thumb:hover {
+  background: var(--bs-secondary-color);
+  background-clip: padding-box;
+}
+
+/* The editor replaces the title in place, so it has to occupy the same
+   height: a form-control is taller than a line of text and would shove every
+   card below. */
+.edit-title {
+  height: auto;
+  padding: 0 .2rem;
+  font-size: inherit;
+  line-height: 1.3;
+  background: var(--bs-body-bg);
+  border: 0;
+  border-bottom: 1px solid var(--bs-primary);
+  border-radius: 0;
+}
+.edit-title:focus { box-shadow: none; border-bottom-width: 2px; }
+
+/* Set only while something is actually below the fold. */
+.quadrant .list-group.has-more {
+  box-shadow: inset 0 -12px 10px -10px rgba(0, 0, 0, .35);
+}
+
+.issue { cursor: grab; }
+.issue-closed .issue-title { opacity: .6; text-decoration: line-through; }
+.issue.dragging { opacity: .4; }
+.issue-title { line-height: 1.3; color: var(--bs-body-color); }
+.issue-title:hover { text-decoration: underline; }
+#profile[href]:hover #login { text-decoration: underline; }
+.issue-meta { display: flex; flex-wrap: wrap; align-items: center;
+              gap: .25rem .5rem; }
+.issue-labels .badge { font-weight: 500; }
+.issue-meta img { border-radius: 50%; }
+
+/* A remark about a whole section, not help for the field above it, so it sits
+ * below the body with its own rule rather than tight under the last control.
+ */
+.section-note {
+  font-size: .8125rem;
+  line-height: 1.5;
+  color: var(--bs-secondary-color);
+  background: var(--bs-tertiary-bg);
+}
+
+/* The two capability badges, defined once and used by the picker, the access
+ * dialog headers and the sentence that explains them.
+ */
+.badge-rw { background: var(--bs-success); color: #fff; }
+.badge-ro { background: var(--bs-body-bg); color: var(--bs-secondary-color);
+            border: 1px solid var(--bs-border-color); }
+
+/* Flag toggles, sized down from the sm button. */
+.btn-flag { --bs-btn-padding-y: .05rem; --bs-btn-padding-x: .3rem;
+            --bs-btn-font-size: .7rem; font-weight: 700; }
+
+/* The quadrant help text needs more than the 200px default. */
+.tooltip-inner { max-width: 22rem; text-align: left; }
+
+.list-group.drop-target { outline: 2px dashed var(--q); outline-offset: -4px; }
+.empty-quadrant { padding: 1.25rem; text-align: center; }
+
+/* Nothing is loaded yet, so the quadrant explains itself instead of sitting
+ * blank.
+ */
+.quadrant-blurb {
+  display: flex;
+  align-items: center;
+  height: 100%;
+  margin: 0 auto;
+  max-width: 34rem;
+  padding: 1.5rem 2rem;
+  text-align: center;
+  text-wrap: balance;
+  font-size: .95rem;
+  line-height: 1.55;
+}
+

@@ -1,0 +1,641 @@
+<!doctype html>
+<!-- Quadrants. Copyright 2026 Federico Mastellone.
+     PolyForm Noncommercial 1.0.0, see LICENSE.
+     Commercial use needs a separate license. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+
+<!-- Everything is same origin except the GitHub API. 'unsafe-inline' is for
+     the label colours, which arrive from the API as style attributes.
+
+     'self' is the whole origin, not this directory, so on a shared host such
+     as USER.github.io it also authorises every other page that account
+     publishes. To narrow it to this deployment, replace 'self' in script-src
+     with the exact prefix, which costs file:// because a path source must be
+     absolute:
+       script-src https://fmaste.github.io/quadrants/;
+     That protects this document only. It cannot protect the tokens, because
+     localStorage is keyed by origin and a sibling page ships its own policy.
+     On a domain that serves only this board, 'self' already means only this
+     board, and none of the above is needed. -->
+<meta http-equiv="Content-Security-Policy" content="
+  default-src 'self';
+  script-src 'self';
+  style-src 'self' 'unsafe-inline';
+  img-src 'self' https://*.githubusercontent.com data:;
+  font-src 'self';
+  connect-src 'self' https://api.github.com;
+  form-action 'none';
+  object-src 'none';
+  base-uri 'none'">
+
+<title>Quadrants</title>
+
+<!-- What this page claims to be. verify.py in that repository checks the
+     claim: it reads the commit GitHub says is deployed and compares every
+     served file with the repository's own copy. Change this when you fork. -->
+<meta name="source-repository" content="fmaste/quadrants">
+
+<!-- Cut from art/icon.jpg; the crops are written down in the README. -->
+<link rel="icon" href="img/favicon.ico" sizes="16x16 32x32 48x48">
+<link rel="icon" type="image/png" sizes="32x32" href="img/icon-32.png">
+<link rel="icon" type="image/png" sizes="192x192" href="img/icon-192.png">
+<link rel="icon" type="image/png" sizes="512x512" href="img/icon-512.png">
+<link rel="apple-touch-icon" href="img/apple-touch-icon.png">
+
+<link href="vendor/bootstrap-5.3.8.min.css" rel="stylesheet">
+<link href="vendor/bootstrap-icons-1.13.1/bootstrap-icons.min.css"
+      rel="stylesheet">
+<link href="css/app.css" rel="stylesheet">
+<script src="js/theme.js"></script>
+</head>
+
+<body class="bg-body-tertiary">
+
+<!-- The header is dark whichever theme the page is in, so the controls in it
+     read as one strip rather than as part of the board. data-bs-theme is what
+     turns the buttons, selects and the picker dark with it. -->
+<nav class="navbar navbar-expand bg-body border-bottom sticky-top"
+     data-bs-theme="dark">
+  <!-- Three cells. The outer two share the slack equally, so the board's
+       controls sit on the page's centre line rather than halfway between
+       whatever the name and the account happen to measure. -->
+  <div class="container-fluid gap-2">
+
+    <div class="nav-side">
+      <!-- The light ink variant, because the header is always dark.
+           img/logo.png is the same lockup for light backgrounds. -->
+      <span class="navbar-brand mb-0 me-0 p-0">
+        <img class="brand-logo" src="img/logo-dark.png"
+             width="497" height="128" alt="Quadrants">
+      </span>
+    </div>
+
+    <!-- No flex-wrap utility here: it is !important, and whether this row
+         wraps is decided by width in css/app.css. -->
+    <div id="toolbar"
+         class="d-none align-items-center justify-content-center gap-2">
+      <div class="dropdown" id="repo-picker">
+        <button id="repo-button"
+                class="btn btn-sm btn-outline-secondary dropdown-toggle
+                       text-truncate"
+                style="max-width:22rem" data-bs-toggle="dropdown"
+                data-bs-auto-close="outside" aria-expanded="false">
+          Select repositories
+        </button>
+        <div class="dropdown-menu p-2"
+             style="min-width:20rem; max-height:60vh; overflow-y:auto">
+          <input id="repo-filter" class="form-control form-control-sm mb-2"
+                 placeholder="filter" autocomplete="off">
+          <div id="repo-list"></div>
+          <div id="query-cost"
+               class="small text-body-secondary border-top pt-1 mt-1"></div>
+        </div>
+      </div>
+      <input id="filter" type="search" class="form-control form-control-sm"
+             placeholder="Filter loaded issues" style="max-width:12rem">
+      <select id="state" class="form-select form-select-sm"
+              style="max-width:7rem" title="Which issues">
+        <option value="open">Open</option>
+        <option value="closed">Closed</option>
+        <option value="all">All</option>
+      </select>
+      <select id="sort" class="form-select form-select-sm"
+              style="max-width:11rem">
+        <option value="updated">Recently updated</option>
+        <option value="created">Newest</option>
+        <option value="created-asc">Oldest</option>
+        <option value="comments">Most commented</option>
+      </select>
+      <button id="refresh" class="btn btn-sm btn-outline-secondary"
+              title="Reload from the first page">
+        <i class="bi bi-arrow-clockwise"></i>
+      </button>
+      <span id="spinner"
+            class="spinner-border spinner-border-sm text-secondary
+                   d-none"></span>
+    </div>
+
+    <div class="nav-side justify-content-end">
+      <div id="account" class="d-none align-items-center gap-2">
+        <a id="profile" class="d-flex align-items-center gap-2
+                               text-decoration-none"
+           target="_blank" rel="noopener">
+          <img id="avatar" class="rounded-circle d-none"
+               width="28" height="28" alt="">
+          <span id="login" class="small text-body-secondary"></span>
+        </a>
+        <button id="add-token" class="btn btn-sm btn-outline-secondary"
+                title="Add a token or a public repository">
+          <i class="bi bi-key"></i>
+        </button>
+        <button id="settings-btn" class="btn btn-sm btn-outline-secondary"
+                title="Labels and colours">
+          <i class="bi bi-gear"></i>
+        </button>
+        <button id="logout" class="btn btn-sm btn-outline-danger"
+                title="Sign out: forget every token in this browser, keep
+                       the settings">
+          <i class="bi bi-box-arrow-right"></i>
+        </button>
+      </div>
+    </div>
+
+  </div>
+</nav>
+
+<main class="container-fluid py-3">
+
+  <!-- Shown only while there is nothing to put on the board -->
+  <div id="signin"
+       class="alert alert-primary d-flex flex-wrap align-items-center gap-2
+              d-none">
+    <i class="bi bi-key-fill"></i>
+    <strong>Nothing on the board yet.</strong>
+    <span>
+      Add a token for your own repositories, or any public organization.
+    </span>
+    <button type="button" id="open-access"
+            class="btn btn-sm btn-primary ms-auto">Add access</button>
+  </div>
+
+  <!-- The four quadrants. They are deliberately identical apart from the key
+       in every data- attribute, the name, the axis line and the tooltip; a
+       test asserts that, because a half finished rename has bitten before. -->
+  <div class="board-wrap">
+    <div class="board">
+
+      <div class="card quadrant q-now">
+        <div class="card-header d-flex justify-content-between
+                    align-items-center">
+          <div class="d-flex align-items-center gap-1">
+            <span class="fw-semibold">Do now</span>
+            <button type="button"
+                    class="btn btn-link p-0 align-baseline text-body-secondary
+                           text-decoration-none"
+                    data-bs-toggle="tooltip" data-bs-placement="bottom"
+                    aria-label="What goes here"
+                    data-bs-title="Do now (Urgent &amp; Strategic):
+                      Important work that also has a reason to happen now.
+                      Give every card here an assignee today, and keep the
+                      quadrant small enough to read in one glance.">
+              <i class="bi bi-question-circle"></i>
+            </button>
+            <span class="small text-body-secondary">urgent + strategic</span>
+          </div>
+          <span class="badge" data-count="now">0</span>
+        </div>
+        <div class="list-group list-group-flush" data-list="now"></div>
+        <div class="card-footer d-flex d-none align-items-center gap-2 py-1"
+             data-foot="now">
+          <span class="small text-body-secondary" data-status="now"></span>
+          <div class="ms-auto d-flex align-items-center gap-1 d-none"
+               data-pager="now">
+            <button type="button" class="btn btn-sm btn-link p-0 px-1"
+                    data-page="prev" aria-label="Previous page">
+              <i class="bi bi-chevron-left"></i>
+            </button>
+            <span class="small text-body-secondary" data-pageno="now"></span>
+            <button type="button" class="btn btn-sm btn-link p-0 px-1"
+                    data-page="next" aria-label="Next page">
+              <i class="bi bi-chevron-right"></i>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <div class="card quadrant q-ongoing">
+        <div class="card-header d-flex justify-content-between
+                    align-items-center">
+          <div class="d-flex align-items-center gap-1">
+            <span class="fw-semibold">Ongoing</span>
+            <button type="button"
+                    class="btn btn-link p-0 align-baseline text-body-secondary
+                           text-decoration-none"
+                    data-bs-toggle="tooltip" data-bs-placement="bottom"
+                    aria-label="What goes here"
+                    data-bs-title="Ongoing (Strategic, Not Urgent): The core
+                      evolutionary work, such as new features, new products,
+                      improvements, growth and new clients. Keep progressing
+                      this unless something genuinely urgent takes precedence.
+                      A team whose Ongoing is quiet is not moving forward,
+                      however busy the other quadrants look.">
+              <i class="bi bi-question-circle"></i>
+            </button>
+            <span class="small text-body-secondary">strategic, not urgent</span>
+          </div>
+          <span class="badge" data-count="ongoing">0</span>
+        </div>
+        <div class="list-group list-group-flush" data-list="ongoing"></div>
+        <div class="card-footer d-flex d-none align-items-center gap-2 py-1"
+             data-foot="ongoing">
+          <span class="small text-body-secondary" data-status="ongoing"></span>
+          <div class="ms-auto d-flex align-items-center gap-1 d-none"
+               data-pager="ongoing">
+            <button type="button" class="btn btn-sm btn-link p-0 px-1"
+                    data-page="prev" aria-label="Previous page">
+              <i class="bi bi-chevron-left"></i>
+            </button>
+            <span class="small text-body-secondary"
+                  data-pageno="ongoing"></span>
+            <button type="button" class="btn btn-sm btn-link p-0 px-1"
+                    data-page="next" aria-label="Next page">
+              <i class="bi bi-chevron-right"></i>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <div class="card quadrant q-respond">
+        <div class="card-header d-flex justify-content-between
+                    align-items-center">
+          <div class="d-flex align-items-center gap-1">
+            <span class="fw-semibold">Respond</span>
+            <button type="button"
+                    class="btn btn-link p-0 align-baseline text-body-secondary
+                           text-decoration-none"
+                    data-bs-toggle="tooltip" data-bs-placement="bottom"
+                    aria-label="What goes here"
+                    data-bs-title="Respond (Urgent, Not Strategic): Necessary
+                      work that supports the current operation but does not
+                      advance the project strategically. Do it when it needs
+                      doing, but do not let it become the team's main
+                      activity. Automate or share out whatever keeps coming
+                      back.">
+              <i class="bi bi-question-circle"></i>
+            </button>
+            <span class="small text-body-secondary">urgent, not strategic</span>
+          </div>
+          <span class="badge" data-count="respond">0</span>
+        </div>
+        <div class="list-group list-group-flush" data-list="respond"></div>
+        <div class="card-footer d-flex d-none align-items-center gap-2 py-1"
+             data-foot="respond">
+          <span class="small text-body-secondary" data-status="respond"></span>
+          <div class="ms-auto d-flex align-items-center gap-1 d-none"
+               data-pager="respond">
+            <button type="button" class="btn btn-sm btn-link p-0 px-1"
+                    data-page="prev" aria-label="Previous page">
+              <i class="bi bi-chevron-left"></i>
+            </button>
+            <span class="small text-body-secondary"
+                  data-pageno="respond"></span>
+            <button type="button" class="btn btn-sm btn-link p-0 px-1"
+                    data-page="next" aria-label="Next page">
+              <i class="bi bi-chevron-right"></i>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <div class="card quadrant q-unsorted">
+        <div class="card-header d-flex justify-content-between
+                    align-items-center">
+          <div class="d-flex align-items-center gap-1">
+            <span class="fw-semibold">Unsorted</span>
+            <button type="button"
+                    class="btn btn-link p-0 align-baseline text-body-secondary
+                           text-decoration-none"
+                    data-bs-toggle="tooltip" data-bs-placement="bottom"
+                    aria-label="What goes here"
+                    data-bs-title="Unsorted (Not Urgent &amp; Not Strategic):
+                      No flag has been set, either because nobody has looked
+                      yet or because someone looked and left it. New issues
+                      land here by default, so it is a pile to sort rather
+                      than a verdict. Sweep it on a cadence: flag what
+                      deserves a flag, and close what nobody will defend.">
+              <i class="bi bi-question-circle"></i>
+            </button>
+            <span class="small text-body-secondary">neither flag</span>
+          </div>
+          <span class="badge" data-count="unsorted">0</span>
+        </div>
+        <div class="list-group list-group-flush" data-list="unsorted"></div>
+        <div class="card-footer d-flex d-none align-items-center gap-2 py-1"
+             data-foot="unsorted">
+          <span class="small text-body-secondary" data-status="unsorted"></span>
+          <div class="ms-auto d-flex align-items-center gap-1 d-none"
+               data-pager="unsorted">
+            <button type="button" class="btn btn-sm btn-link p-0 px-1"
+                    data-page="prev" aria-label="Previous page">
+              <i class="bi bi-chevron-left"></i>
+            </button>
+            <span class="small text-body-secondary"
+                  data-pageno="unsorted"></span>
+            <button type="button" class="btn btn-sm btn-link p-0 px-1"
+                    data-page="next" aria-label="Next page">
+              <i class="bi bi-chevron-right"></i>
+            </button>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+</main>
+
+<!-- Access: what this browser can reach, and what it costs to trust it -->
+<div class="modal fade" id="access" tabindex="-1">
+  <div class="modal-dialog modal-lg modal-dialog-scrollable">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title"><i class="bi bi-key"></i> Access</h5>
+        <button type="button" class="btn-close"
+                data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body vstack gap-3">
+
+        <div class="card">
+          <div class="card-header bg-body-tertiary">
+            <div class="d-flex align-items-center gap-2">
+              <i class="bi bi-key-fill text-primary"></i>
+              <strong>Tokens</strong>
+              <span class="badge badge-rw">RW</span>
+            </div>
+            <div class="small text-body-secondary">
+              One per owner. The only way to move a card. What a token reaches
+              is badged <span class="badge badge-rw">RW</span> or
+              <span class="badge badge-ro">RO</span> in the picker.
+            </div>
+          </div>
+          <div class="card-body">
+            <div id="token-list"></div>
+            <form id="pat-form" class="input-group input-group-sm mt-2">
+              <input id="pat" type="password" class="form-control"
+                     placeholder="github_pat_..." autocomplete="off" required>
+              <button class="btn btn-primary" type="submit">Add token</button>
+            </form>
+            <div class="form-text">
+              <a id="new-token-link" target="_blank" rel="noopener"
+                 >Create a token</a>, already set
+              to Issues read and write plus Metadata read. Under
+              <strong>Resource owner</strong> pick your account
+              <em>or an organization</em>. The link asks for 30 days: an
+              organization that caps token lifetime refuses anything above its
+              cap outright, and a short lifetime also limits how long a stolen
+              token is worth anything. If an organization rejects your token,
+              the fix is a shorter lifetime, not a longer one. Tokens stay in
+              this browser and are sent only to api.github.com.
+              <strong>Revoke</strong> beside a token ends it at GitHub for
+              good; the bin only makes this browser forget it.
+            </div>
+            <div class="alert alert-secondary small py-2 mt-2 mb-0">
+              An organization that restricts fine grained tokens does not
+              appear here at all, not even for reading, and GitHub cannot list
+              which ones those are. Add it under Public instead.
+            </div>
+            <div class="alert alert-secondary small py-2 mt-2 mb-0">
+              <strong>Do not take this page's word for anything, including
+              this paragraph.</strong>
+              Whoever serves this page chooses the code your browser runs, and
+              can choose differently tomorrow, or for one visitor. Nothing on
+              the page can prove otherwise. What you can do:
+              <ul class="mb-0 ps-3">
+                <li><strong>Do not sign in at all.</strong> Public
+                    repositories and whole organizations work with no token,
+                    under Public below.</li>
+                <li><strong>Run your own copy.</strong>
+                    <code>git clone https://github.com/fmaste/quadrants</code>,
+                    then open <code>index.html</code> from disk. There is no
+                    build step, so the clone is the whole program and it talks
+                    to GitHub directly.</li>
+                <li><strong>Check this deployment against that source.</strong>
+                    From the clone,
+                    <code>python3 verify.py site &lt;this url&gt;
+                    fmaste/quadrants</code> reads the commit GitHub reports as
+                    deployed and compares every served file with it. It proves
+                    the bytes you got now are a reviewable commit; it cannot
+                    promise the next request.</li>
+              </ul>
+            </div>
+            <div class="alert alert-warning small py-2 mt-2 mb-0">
+              <strong>Where this is hosted matters.</strong> Browser storage
+              is shared by every page on one origin, so on
+              <code>user.github.io</code> any other site that account
+              publishes can read these tokens. A dedicated domain, or an
+              account that hosts nothing else, is the only thing that isolates
+              them.
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-header bg-body-tertiary">
+            <div class="d-flex align-items-center gap-2">
+              <i class="bi bi-globe text-body-secondary"></i>
+              <strong>Public</strong>
+              <span class="badge badge-ro">RO</span>
+            </div>
+            <div class="small text-body-secondary">
+              No token, no grant, never writable.
+            </div>
+          </div>
+          <div class="card-body">
+            <div id="public-list"></div>
+            <form id="anon-form" class="input-group input-group-sm mt-2">
+              <input id="anon-repo" class="form-control"
+                     placeholder="owner/repo, or just owner"
+                     pattern="[^/\s]+(/[^/\s]+)?" required autocomplete="off">
+              <button class="btn btn-outline-secondary" type="submit">
+                Add public
+              </button>
+            </form>
+            <div class="form-text">
+              An owner on its own adds all of its public repositories.
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Sign out: what it forgets, and what it leaves alone -->
+<div class="modal fade" id="signout" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">
+          <i class="bi bi-box-arrow-right"></i> Sign out
+        </h5>
+        <button type="button" class="btn-close"
+                data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body vstack gap-3">
+        <p class="mb-0">
+          This forgets
+          <span id="signout-count" class="fw-semibold">every token</span>
+          in this browser, and nothing else. They keep working at GitHub: to
+          end one for good, use <strong>revoke</strong> under Access instead.
+        </p>
+        <div class="form-check">
+          <input class="form-check-input" type="checkbox" id="signout-reset">
+          <label class="form-check-label" for="signout-reset">
+            Also reset to defaults
+            <span class="form-text d-block mt-0">
+              Flag label names and their colours, and the quadrant colours, go
+              back to what <code>js/config.js</code> says. The public
+              repositories you added, and which repositories were selected,
+              are kept either way.
+            </span>
+          </label>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-outline-secondary"
+                data-bs-dismiss="modal">Cancel</button>
+        <button type="button" id="signout-go" class="btn btn-danger">
+          Sign out
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Labels and colours -->
+<div class="modal fade" id="settings" tabindex="-1">
+  <div class="modal-dialog modal-lg modal-dialog-scrollable">
+    <form class="modal-content" id="settings-form">
+      <div class="modal-header">
+        <h5 class="modal-title">
+          <i class="bi bi-gear"></i> Labels and colours
+        </h5>
+        <button type="button" class="btn-close"
+                data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body vstack gap-3">
+
+        <div class="card">
+          <div class="card-header bg-body-tertiary">
+            <div class="d-flex align-items-center gap-2">
+              <i class="bi bi-tags-fill text-body-secondary"></i>
+              <strong>Flag labels</strong>
+            </div>
+            <div class="small text-body-secondary">
+              The two labels the board reads, and the colour each is written
+              with.
+            </div>
+          </div>
+          <div class="card-body">
+            <div class="row g-3">
+              <div class="col-lg-6">
+                <label class="form-label" for="urgent-labels">Urgent</label>
+                <div class="input-group">
+                  <input id="urgent-labels" class="form-control"
+                         placeholder="urgent, priority:urgent">
+                  <input id="urgent-color" type="color"
+                         class="form-control form-control-color"
+                         title="Colour written to GitHub">
+                </div>
+              </div>
+              <div class="col-lg-6">
+                <label class="form-label"
+                       for="strategic-labels">Strategic</label>
+                <div class="input-group">
+                  <input id="strategic-labels" class="form-control"
+                         placeholder="strategic, strategic">
+                  <input id="strategic-color" type="color"
+                         class="form-control form-control-color"
+                         title="Colour written to GitHub">
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="card-footer section-note">
+            Comma separated, case insensitive. Any name in a list sets the
+            flag; the first name is the one written back when you move a card,
+            so listing an old name second migrates a board without
+            reclassifying anything. On a shared board, write what each flag
+            means into the label description on GitHub, so the whole team
+            flags the same way.
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-header bg-body-tertiary">
+            <div class="d-flex align-items-center gap-2">
+              <i class="bi bi-palette-fill text-body-secondary"></i>
+              <strong>Quadrant colours</strong>
+            </div>
+            <div class="small text-body-secondary">
+              The card's top rule and its count badge. This board only, never
+              written to GitHub.
+            </div>
+          </div>
+          <div class="card-body">
+            <div class="row g-2">
+              <div class="col-6 col-sm-3">
+                <label class="form-label small mb-1" for="quad-color-now"
+                       id="quad-name-now">Do now</label>
+                <input id="quad-color-now" type="color"
+                       class="form-control form-control-color w-100">
+              </div>
+              <div class="col-6 col-sm-3">
+                <label class="form-label small mb-1" for="quad-color-ongoing"
+                       id="quad-name-ongoing">Ongoing</label>
+                <input id="quad-color-ongoing" type="color"
+                       class="form-control form-control-color w-100">
+              </div>
+              <div class="col-6 col-sm-3">
+                <label class="form-label small mb-1" for="quad-color-respond"
+                       id="quad-name-respond">Respond</label>
+                <input id="quad-color-respond" type="color"
+                       class="form-control form-control-color w-100">
+              </div>
+              <div class="col-6 col-sm-3">
+                <label class="form-label small mb-1" for="quad-color-unsorted"
+                       id="quad-name-unsorted">Unsorted</label>
+                <input id="quad-color-unsorted" type="color"
+                       class="form-control form-control-color w-100">
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-header bg-body-tertiary d-flex align-items-center
+                      justify-content-between gap-2">
+            <div>
+              <div class="d-flex align-items-center gap-2">
+                <i class="bi bi-cloud-arrow-up-fill text-body-secondary"></i>
+                <strong>Write them to GitHub</strong>
+              </div>
+              <div class="small text-body-secondary">
+                Into <code id="label-repo"></code>.
+              </div>
+            </div>
+            <button type="button" id="make-labels"
+                    class="btn btn-sm btn-outline-primary flex-shrink-0">
+              Create or update
+            </button>
+          </div>
+          <div class="card-body">
+            <div id="label-preview"></div>
+          </div>
+          <div class="card-footer section-note" id="label-help"></div>
+        </div>
+
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-outline-secondary"
+                data-bs-dismiss="modal">Cancel</button>
+        <button type="submit" class="btn btn-primary">Save</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<div id="alerts"
+     class="toast-container position-fixed bottom-0 end-0 p-3"></div>
+
+<script src="vendor/jquery-3.7.1.min.js"></script>
+<script src="vendor/bootstrap-5.3.8.bundle.min.js"></script>
+<script src="js/config.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>
+
